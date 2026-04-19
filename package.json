@@ -30,8 +30,5 @@
     "typescript": "^5.7.0"
   },
   "license": "MIT",
-  "author": "Coder",
-  "publishConfig": {
-    "access": "public"
-  }
+  "author": "Coder"
 }
