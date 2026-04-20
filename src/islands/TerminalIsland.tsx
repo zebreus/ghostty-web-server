@@ -24,10 +24,57 @@ interface GhosttyTerminal {
   onTitleChange(cb: (title: string) => void): { dispose(): void };
   onBell(cb: () => void): { dispose(): void };
   dispose?(): void;
-  /** Current viewport scroll offset (0 = bottom, >0 = scrolled up into history). */
-  viewportY: number;
-  /** Number of lines in the scrollback buffer (history above the active screen). */
-  getScrollbackLength(): number;
+
+  // ── Internals used by patchWriteInternal to bypass auto-scroll ──────────
+  /** WASM terminal handle — the underlying ghostty parser. */
+  wasmTerm?: { write(data: string | Uint8Array): void };
+  /** Emit pending DSR / cursor-position responses back to the PTY. */
+  processTerminalResponses(): void;
+  /** Link detector cache (optional — may be undefined before open). */
+  linkDetector?: { invalidateCache(): void };
+  /** Bell event emitter. */
+  bellEmitter: { fire(): void };
+  /** Title change detection for OSC 0/1/2. */
+  checkForTitleChange(data: string): void;
+  /** writeInternal is what write() delegates to. We replace it. */
+  writeInternal(data: string | Uint8Array, cb?: () => void): void;
+}
+
+/**
+ * Monkey-patch `writeInternal` on a ghostty-web Terminal instance so it no
+ * longer unconditionally calls `scrollToBottom()` on every write.
+ *
+ * The patched version reproduces every side-effect of the original
+ * (wasmTerm.write → processTerminalResponses → bell → link-cache →
+ *  title-change → callback) but simply omits the scroll-to-bottom call,
+ * letting the user read scrollback while output is still arriving.
+ */
+function patchWriteInternal(term: GhosttyTerminal): void {
+  term.writeInternal = function (
+    this: GhosttyTerminal,
+    data: string | Uint8Array,
+    cb?: () => void,
+  ) {
+    this.wasmTerm!.write(data);
+    this.processTerminalResponses();
+
+    // Bell detection (0x07 / BEL)
+    if (typeof data === 'string') {
+      if (data.includes('\x07')) this.bellEmitter.fire();
+    } else if (data.includes(7)) {
+      this.bellEmitter.fire();
+    }
+
+    this.linkDetector?.invalidateCache();
+
+    // ← scrollToBottom() intentionally omitted
+
+    if (typeof data === 'string' && data.includes('\x1b]')) {
+      this.checkForTitleChange(data);
+    }
+
+    if (cb) requestAnimationFrame(cb);
+  };
 }
 
 // RFC4122 v4 via getRandomValues, which (unlike crypto.randomUUID) works on
@@ -92,6 +139,11 @@ export function TerminalIsland() {
         theme: { background: '#1e1e1e', foreground: '#d4d4d4' },
       });
       await term.open(ref.current!);
+
+      // Replace writeInternal so incoming PTY data never forces the
+      // viewport to the bottom — users can scroll through history while
+      // output is still arriving.
+      patchWriteInternal(term);
 
       // Wire-protocol envelope. Every WS frame in either direction is JSON.
       type ClientMsg = { type: 'input'; value: string } | { type: 'resize'; cols: number; rows: number };
@@ -175,18 +227,7 @@ export function TerminalIsland() {
           try {
             const m = JSON.parse(e.data);
             if (m.type === 'data' && typeof m.value === 'string') {
-              // ghostty-web's write() unconditionally scrolls to bottom.
-              // Preserve the user's scroll position so they can read history
-              // while output is still arriving.
-              const savedY = term!.viewportY;
-              const savedLen = savedY > 0 ? term!.getScrollbackLength() : 0;
               term!.write(m.value);
-              if (savedY > 0) {
-                // Adjust for any new scrollback lines so the viewport stays
-                // at the same absolute position in the buffer.
-                const delta = term!.getScrollbackLength() - savedLen;
-                term!.viewportY = savedY + delta;
-              }
             } else if (
               m.type === 'ack' &&
               typeof m.cols === 'number' &&
