@@ -94,6 +94,7 @@ export function attachBridge(
     };
     const onUp = (e: MouseEvent) => {
       if (!term.hasMouseTracking()) return;
+      // Allow release outside the canvas only when a drag started on-canvas.
       if (!buttonHeld && !isTerminalSurfaceEvent(e)) return;
       const c = cell(e);
       if (!c) return;
