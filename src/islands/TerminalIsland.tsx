@@ -10,6 +10,7 @@ type GhosttyModule = {
 };
 
 type GhosttyWriteData = string | Uint8Array;
+const OSC_SCAN_LIMIT = 1024;
 
 interface GhosttyTerminal {
   cols: number;
@@ -91,8 +92,17 @@ function patchWriteInternal(term: GhosttyTerminal): () => void {
 
     if (wasAtBottom) this.scrollToBottom();
 
-    const text = typeof data === 'string' ? data : decoder.decode(data);
-    if (text.includes('\x1b]')) this.checkForTitleChange(text);
+    if (typeof data === 'string') {
+      if (data.includes('\x1b]')) this.checkForTitleChange(data);
+    } else {
+      const scanLimit = Math.min(data.length, OSC_SCAN_LIMIT);
+      for (let byteIndex = 0; byteIndex < scanLimit - 1; byteIndex += 1) {
+        if (data[byteIndex] === 0x1b && data[byteIndex + 1] === 0x5d) {
+          this.checkForTitleChange(decoder.decode(data));
+          break;
+        }
+      }
+    }
 
     if (cb) requestAnimationFrame(cb);
   };
