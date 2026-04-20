@@ -35,6 +35,8 @@ export function attachBridge(
   send: (data: string) => void
 ): () => void {
   const teardown: (() => void)[] = [];
+  const isTerminalSurfaceEvent = (e: MouseEvent | WheelEvent): boolean =>
+    e.composedPath().some((n) => n instanceof HTMLCanvasElement);
 
   // ─── Bell false-positive guard ─────────────────────────────────────────────
   // ghostty-web fires its bell event whenever a write contains 0x07, which
@@ -82,6 +84,7 @@ export function attachBridge(
 
     const onDown = (e: MouseEvent) => {
       if (!term.hasMouseTracking()) return;
+      if (!isTerminalSurfaceEvent(e)) return;
       const c = cell(e);
       if (!c) return;
       send(encode(buttonBits(e), c.x, c.y, SGR_PRESS));
@@ -91,6 +94,7 @@ export function attachBridge(
     };
     const onUp = (e: MouseEvent) => {
       if (!term.hasMouseTracking()) return;
+      if (!buttonHeld && !isTerminalSurfaceEvent(e)) return;
       const c = cell(e);
       if (!c) return;
       send(encode(buttonBits(e), c.x, c.y, SGR_RELEASE));
@@ -112,6 +116,7 @@ export function attachBridge(
     // program wants wheel-as-mouse. Returning true skips lib default.
     term.attachCustomWheelEventHandler((e) => {
       if (!term.hasMouseTracking()) return false;
+      if (!isTerminalSurfaceEvent(e)) return false;
       const c = cell(e);
       if (!c) return false;
       const dir = e.deltaY > 0 ? 65 : 64;
