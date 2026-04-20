@@ -28,32 +28,35 @@ interface GhosttyTerminal {
   onBell(cb: () => void): { dispose(): void };
   dispose?(): void;
   viewportY: number;
-
-  // ── Internals used by patchWriteInternal to bypass auto-scroll ──────────
-  /** WASM terminal handle — the underlying ghostty parser. */
-  wasmTerm?: { write(data: GhosttyWriteData): void };
-  /** Emit pending DSR / cursor-position responses back to the PTY. */
-  processTerminalResponses(): void;
-  /** Link detector cache (optional — may be undefined before open). */
-  linkDetector?: { invalidateCache(): void };
-  /** Bell event emitter. */
-  bellEmitter: { fire(): void };
   /** Title change detection for OSC 0/1/2. */
   checkForTitleChange(data: string): void;
+  getScrollbackLength(): number;
   /** writeInternal is what write() delegates to. We replace it. */
   writeInternal(data: GhosttyWriteData, cb?: () => void): void;
-  /** Restore bottom-follow behavior after writes when appropriate. */
-  scrollToBottom(): void;
+  /** Restore the previous viewport when preserving scrollback. */
+  scrollToLine(line: number): void;
+}
+
+function decodeIfContainsOscSequence(
+  data: Uint8Array,
+  decoder: TextDecoder,
+): string | undefined {
+  const scanLimit = Math.min(data.length, OSC_SCAN_LIMIT);
+  for (let byteIndex = 0; byteIndex < scanLimit - 1; byteIndex += 1) {
+    if (data[byteIndex] === 0x1b && data[byteIndex + 1] === 0x5d) {
+      return decoder.decode(data);
+    }
+  }
+  return undefined;
 }
 
 /**
- * Monkey-patch `writeInternal` on a ghostty-web Terminal instance using a
- * vendored copy of ghostty-web's implementation, changing only the scrolling
- * behavior.
+ * Wrap `writeInternal` so ghostty-web keeps handling writes, bells, links,
+ * callbacks, and normal bottom-follow behavior, but we restore the user's
+ * scrollback position after the write if they were reading history.
  *
- * We keep the user pinned to the bottom only if they were already there
- * before the write. When they have scrolled up into history, new output no
- * longer forces the viewport back down.
+ * This keeps the patch small and aligned with upstream while still preserving
+ * scrollback during live output.
  */
 function patchWriteInternal(term: GhosttyTerminal): () => void {
   const originalWriteInternal = term.writeInternal;
@@ -63,48 +66,42 @@ function patchWriteInternal(term: GhosttyTerminal): () => void {
     data: GhosttyWriteData,
     cb?: () => void,
   ) {
+    const terminal = this;
     if (
-      !this.wasmTerm ||
-      typeof this.processTerminalResponses !== 'function' ||
-      typeof this.scrollToBottom !== 'function' ||
-      typeof this.checkForTitleChange !== 'function' ||
-      typeof this.bellEmitter?.fire !== 'function'
+      typeof terminal.getScrollbackLength !== 'function' ||
+      typeof terminal.scrollToLine !== 'function'
     ) {
-      originalWriteInternal.call(this, data, cb);
+      originalWriteInternal.call(terminal, data, cb);
       return;
     }
 
-    const wasAtBottom = this.viewportY === 0;
+    const previousViewportY = terminal.viewportY;
+    const previousScrollbackLength = terminal.getScrollbackLength();
+    const decodedOscTitle =
+      data instanceof Uint8Array && typeof terminal.checkForTitleChange === 'function'
+        ? decodeIfContainsOscSequence(data, decoder)
+        : undefined;
 
-    // Vendored from ghostty-web's writeInternal(), with only the scroll
-    // behavior changed to preserve user-selected scrollback position.
-    this.wasmTerm.write(data);
-    this.processTerminalResponses();
-
-    if (
-      (typeof data === 'string' && data.includes('\x07')) ||
-      (data instanceof Uint8Array && data.includes(7))
-    ) {
-      this.bellEmitter.fire();
-    }
-
-    this.linkDetector?.invalidateCache();
-
-    if (wasAtBottom) this.scrollToBottom();
-
-    if (typeof data === 'string') {
-      if (data.includes('\x1b]')) this.checkForTitleChange(data);
-    } else {
-      const scanLimit = Math.min(data.length, OSC_SCAN_LIMIT);
-      for (let byteIndex = 0; byteIndex < scanLimit - 1; byteIndex += 1) {
-        if (data[byteIndex] === 0x1b && data[byteIndex + 1] === 0x5d) {
-          this.checkForTitleChange(decoder.decode(data));
-          break;
-        }
+    const finishWrite = () => {
+      if (previousViewportY !== 0) {
+        const scrollbackDelta = terminal.getScrollbackLength() - previousScrollbackLength;
+        terminal.scrollToLine(Math.max(0, previousViewportY + scrollbackDelta));
       }
-    }
+      if (decodedOscTitle) terminal.checkForTitleChange(decodedOscTitle);
+    };
 
-    if (cb) requestAnimationFrame(cb);
+    originalWriteInternal.call(
+      terminal,
+      data,
+      cb
+        ? () => {
+            finishWrite();
+            cb();
+          }
+        : undefined,
+    );
+
+    if (!cb) requestAnimationFrame(finishWrite);
   };
 
   term.writeInternal = patchedWriteInternal;
