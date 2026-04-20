@@ -9,13 +9,15 @@ type GhosttyModule = {
   Terminal: new (opts: Record<string, unknown>) => GhosttyTerminal;
 };
 
+type GhosttyWriteData = string | Uint8Array;
+
 interface GhosttyTerminal {
   cols: number;
   rows: number;
   renderer: { getMetrics(): { width: number; height: number } };
   open(el: HTMLElement): Promise<void>;
   resize(cols: number, rows: number): void;
-  write(data: string): void;
+  write(data: GhosttyWriteData): void;
   onData(cb: (data: string) => void): void;
   onResize(cb: (size: { cols: number; rows: number }) => void): void;
   hasMouseTracking(): boolean;
@@ -24,10 +26,11 @@ interface GhosttyTerminal {
   onTitleChange(cb: (title: string) => void): { dispose(): void };
   onBell(cb: () => void): { dispose(): void };
   dispose?(): void;
+  viewportY: number;
 
   // ── Internals used by patchWriteInternal to bypass auto-scroll ──────────
   /** WASM terminal handle — the underlying ghostty parser. */
-  wasmTerm?: { write(data: string | Uint8Array): void };
+  wasmTerm?: { write(data: GhosttyWriteData): void };
   /** Emit pending DSR / cursor-position responses back to the PTY. */
   processTerminalResponses(): void;
   /** Link detector cache (optional — may be undefined before open). */
@@ -37,43 +40,69 @@ interface GhosttyTerminal {
   /** Title change detection for OSC 0/1/2. */
   checkForTitleChange(data: string): void;
   /** writeInternal is what write() delegates to. We replace it. */
-  writeInternal(data: string | Uint8Array, cb?: () => void): void;
+  writeInternal(data: GhosttyWriteData, cb?: () => void): void;
+  /** Restore bottom-follow behavior after writes when appropriate. */
+  scrollToBottom(): void;
 }
 
 /**
- * Monkey-patch `writeInternal` on a ghostty-web Terminal instance so it no
- * longer unconditionally calls `scrollToBottom()` on every write.
+ * Monkey-patch `writeInternal` on a ghostty-web Terminal instance using a
+ * vendored copy of ghostty-web's implementation, changing only the scrolling
+ * behavior.
  *
- * The patched version reproduces every side-effect of the original
- * (wasmTerm.write → processTerminalResponses → bell → link-cache →
- *  title-change → callback) but simply omits the scroll-to-bottom call,
- * letting the user read scrollback while output is still arriving.
+ * We keep the user pinned to the bottom only if they were already there
+ * before the write. When they have scrolled up into history, new output no
+ * longer forces the viewport back down.
  */
-function patchWriteInternal(term: GhosttyTerminal): void {
-  term.writeInternal = function (
+function patchWriteInternal(term: GhosttyTerminal): () => void {
+  const originalWriteInternal = term.writeInternal;
+  const decoder = new TextDecoder();
+  const patchedWriteInternal = function (
     this: GhosttyTerminal,
-    data: string | Uint8Array,
+    data: GhosttyWriteData,
     cb?: () => void,
   ) {
-    this.wasmTerm!.write(data);
+    if (
+      !this.wasmTerm ||
+      typeof this.processTerminalResponses !== 'function' ||
+      typeof this.scrollToBottom !== 'function' ||
+      typeof this.checkForTitleChange !== 'function' ||
+      typeof this.bellEmitter?.fire !== 'function'
+    ) {
+      originalWriteInternal.call(this, data, cb);
+      return;
+    }
+
+    const wasAtBottom = this.viewportY === 0;
+
+    // Vendored from ghostty-web's writeInternal(), with only the scroll
+    // behavior changed to preserve user-selected scrollback position.
+    this.wasmTerm.write(data);
     this.processTerminalResponses();
 
-    // Bell detection (0x07 / BEL)
-    if (typeof data === 'string') {
-      if (data.includes('\x07')) this.bellEmitter.fire();
-    } else if (data.includes(7)) {
+    if (
+      (typeof data === 'string' && data.includes('\x07')) ||
+      (data instanceof Uint8Array && data.includes(7))
+    ) {
       this.bellEmitter.fire();
     }
 
     this.linkDetector?.invalidateCache();
 
-    // ← scrollToBottom() intentionally omitted
+    if (wasAtBottom) this.scrollToBottom();
 
-    if (typeof data === 'string' && data.includes('\x1b]')) {
-      this.checkForTitleChange(data);
-    }
+    const text = typeof data === 'string' ? data : decoder.decode(data);
+    if (text.includes('\x1b]')) this.checkForTitleChange(text);
 
     if (cb) requestAnimationFrame(cb);
+  };
+
+  term.writeInternal = patchedWriteInternal;
+
+  return () => {
+    if (term.writeInternal === patchedWriteInternal) {
+      term.writeInternal = originalWriteInternal;
+    }
   };
 }
 
@@ -113,6 +142,7 @@ export function TerminalIsland() {
     let reconnectTimer: ReturnType<typeof setInterval> | undefined;
     let ro: ResizeObserver | undefined;
     let detachBridge: (() => void) | undefined;
+    let restoreWriteInternal: (() => void) | undefined;
 
     (async () => {
       const url = `${location.origin}/dist/ghostty-web.js`;
@@ -143,7 +173,7 @@ export function TerminalIsland() {
       // Replace writeInternal so incoming PTY data never forces the
       // viewport to the bottom — users can scroll through history while
       // output is still arriving.
-      patchWriteInternal(term);
+      restoreWriteInternal = patchWriteInternal(term);
 
       // Wire-protocol envelope. Every WS frame in either direction is JSON.
       type ClientMsg = { type: 'input'; value: string } | { type: 'resize'; cols: number; rows: number };
@@ -268,6 +298,7 @@ export function TerminalIsland() {
       cancelled = true;
       if (reconnectTimer) clearInterval(reconnectTimer);
       detachBridge?.();
+      restoreWriteInternal?.();
       ro?.disconnect();
       ws?.close();
       term?.dispose?.();
