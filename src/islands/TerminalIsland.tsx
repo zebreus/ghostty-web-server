@@ -24,6 +24,10 @@ interface GhosttyTerminal {
   onTitleChange(cb: (title: string) => void): { dispose(): void };
   onBell(cb: () => void): { dispose(): void };
   dispose?(): void;
+  /** Current viewport scroll offset (0 = bottom, >0 = scrolled up into history). */
+  viewportY: number;
+  /** Number of lines in the scrollback buffer (history above the active screen). */
+  getScrollbackLength(): number;
 }
 
 // RFC4122 v4 via getRandomValues, which (unlike crypto.randomUUID) works on
@@ -171,7 +175,18 @@ export function TerminalIsland() {
           try {
             const m = JSON.parse(e.data);
             if (m.type === 'data' && typeof m.value === 'string') {
+              // ghostty-web's write() unconditionally scrolls to bottom.
+              // Preserve the user's scroll position so they can read history
+              // while output is still arriving.
+              const savedY = term!.viewportY;
+              const savedLen = savedY > 0 ? term!.getScrollbackLength() : 0;
               term!.write(m.value);
+              if (savedY > 0) {
+                // Adjust for any new scrollback lines so the viewport stays
+                // at the same absolute position in the buffer.
+                const delta = term!.getScrollbackLength() - savedLen;
+                term!.viewportY = savedY + delta;
+              }
             } else if (
               m.type === 'ack' &&
               typeof m.cols === 'number' &&
