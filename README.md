@@ -19,12 +19,6 @@ chmod +x ghostty-web-server-linux-x64
 
 Then open <http://localhost:8080>.
 
-### npm (requires Bun)
-
-```bash
-npx ghostty-web-server
-```
-
 ## Configuration
 
 | Env | Default | Notes |
