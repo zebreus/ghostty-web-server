@@ -7,6 +7,7 @@ pub const RESIZE_AUTO_REDRAW_MS: u32 = 0;
 
 /// Minimum interval between WebSocket resize messages while the user is
 /// dragging.
+#[allow(dead_code)]
 pub const RESIZE_MIN_INTERVAL_MS: u32 = 50;
 
 /// Floor for terminal dimensions.

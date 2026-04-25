@@ -6,7 +6,6 @@ use std::rc::Rc;
 use gloo_net::http::Request;
 use gloo_storage::{SessionStorage, Storage};
 use serde::Deserialize;
-use wasm_bindgen_futures::JsFuture;
 
 use crate::palette::{register_provider, Command, ProviderFut};
 
@@ -157,7 +156,3 @@ pub fn register_all() {
         })
     }));
 }
-
-// Suppress unused-import warning.
-#[allow(dead_code)]
-fn _keep_jsfuture(_: JsFuture) {}

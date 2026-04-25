@@ -18,8 +18,7 @@ use js_sys::Reflect;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{
-    AudioContext, ClipboardEvent, GainNode, HtmlElement, KeyboardEvent, MouseEvent,
-    OscillatorNode, WheelEvent,
+    AudioContext, ClipboardEvent, GainNode, HtmlElement, MouseEvent, OscillatorNode, WheelEvent,
 };
 
 use crate::ghostty::{dispose, GhosttyTerminal};
@@ -344,6 +343,3 @@ fn beep(ctx: &AudioContext) -> Result<(), JsValue> {
     Ok(())
 }
 
-// Suppress unused-import lints if KeyboardEvent isn't referenced.
-#[allow(dead_code)]
-fn _keep(_: KeyboardEvent) {}

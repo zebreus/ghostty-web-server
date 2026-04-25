@@ -12,7 +12,6 @@ mod status_island;
 mod terminal_island;
 
 use wasm_bindgen::JsCast;
-use yew::prelude::*;
 
 use crate::palette_island::PaletteIsland;
 use crate::status_island::StatusIsland;

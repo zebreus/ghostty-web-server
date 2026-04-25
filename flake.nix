@@ -14,8 +14,20 @@
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
-            bun
-            nodejs_22
+            # Rust toolchain (stable channel; targets installed via rustup if needed).
+            rustc
+            cargo
+            rustfmt
+            clippy
+            # Yew client tooling.
+            trunk
+            wasm-bindgen-cli
+            # Cross-compile + watch helpers.
+            cargo-watch
+            cargo-zigbuild
+            zig
+            # Useful while iterating.
+            pkg-config
           ];
         };
       });

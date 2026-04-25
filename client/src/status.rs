@@ -55,6 +55,7 @@ pub fn set_status(s: Status) {
     });
 }
 
+#[allow(dead_code)]
 pub fn current() -> Status {
     BUS.with(|b| b.borrow().current.clone())
 }

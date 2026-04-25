@@ -312,8 +312,8 @@ fn decode_utf8_lossy_streaming(buf: &[u8]) -> (String, Vec<u8>) {
         Ok(s) => (s.to_string(), Vec::new()),
         Err(e) => {
             let valid_up_to = e.valid_up_to();
-            // SAFETY: 0..valid_up_to is valid UTF-8 by definition.
-            let head = unsafe { std::str::from_utf8_unchecked(&buf[..valid_up_to]) }.to_string();
+            // SAFETY: 0..valid_up_to is valid UTF-8 by definition of `valid_up_to`.
+            let head = std::str::from_utf8(&buf[..valid_up_to]).unwrap().to_string();
             let tail = &buf[valid_up_to..];
             match e.error_len() {
                 Some(len) => {

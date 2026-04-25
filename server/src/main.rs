@@ -21,7 +21,6 @@ mod session;
 
 use std::time::Duration;
 
-use actix_web::http::header::{HeaderName, HeaderValue};
 use actix_web::middleware::Logger;
 use actix_web::web::{self, Bytes};
 use actix_web::{App, HttpRequest, HttpResponse, HttpServer, Responder};
@@ -302,7 +301,5 @@ async fn ws_handler(
             .await;
     });
 
-    // Attach a CORS-friendly hint that this is a websocket endpoint.
-    let _ = (HeaderName::from_static("x-content-type-options"), HeaderValue::from_static("nosniff"));
     Ok(response)
 }
