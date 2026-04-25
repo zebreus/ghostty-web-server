@@ -1,7 +1,7 @@
 .{
     .name = .ghostty_web_server,
     .version = "0.5.0",
-    .fingerprint = 0x6b91a28959ad0d2c,
+    .fingerprint = 0x2137e78d61983a5a,
     .minimum_zig_version = "0.15.2",
     .dependencies = .{
         .zx = .{

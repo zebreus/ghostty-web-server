@@ -11,10 +11,13 @@ pub const ClientMsg = union(enum) {
 };
 
 pub fn stringifyServer(allocator: std.mem.Allocator, msg: ServerMsg) ![]u8 {
-    return switch (msg) {
-        .data => |d| try std.json.stringifyAlloc(allocator, .{ .type = "data", .value = d.value }, .{}),
-        .ack => |a| try std.json.stringifyAlloc(allocator, .{ .type = "ack", .cols = a.cols, .rows = a.rows }, .{}),
-    };
+    var out: std.Io.Writer.Allocating = .init(allocator);
+    defer out.deinit();
+    switch (msg) {
+        .data => |d| try std.json.Stringify.value(.{ .type = "data", .value = d.value }, .{}, &out.writer),
+        .ack => |a| try std.json.Stringify.value(.{ .type = "ack", .cols = a.cols, .rows = a.rows }, .{}, &out.writer),
+    }
+    return out.toOwnedSlice();
 }
 
 pub fn parseClient(allocator: std.mem.Allocator, raw: []const u8) !ClientMsg {

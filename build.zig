@@ -22,6 +22,7 @@ pub fn build(b: *std.Build) !void {
             .optimize = optimize,
         }),
     });
+    ghostty_wasm.entry = .disabled;
     ghostty_wasm.rdynamic = true;
 
     const install_ghostty_wasm = b.addInstallArtifact(ghostty_wasm, .{ .dest_dir = .{ .override = .{ .custom = "public" } } });

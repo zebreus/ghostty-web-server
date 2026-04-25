@@ -29,26 +29,23 @@ const Session = struct {
     reader: ?std.Thread = null,
 };
 
-var allocator_: std.mem.Allocator = undefined;
+var allocator_: ?std.mem.Allocator = null;
 var mutex: std.Thread.Mutex = .{};
 var sessions: std.StringHashMapUnmanaged(*Session) = .{};
 
-pub fn init(allocator: std.mem.Allocator) !void {
-    allocator_ = allocator;
-}
-
 pub fn deinit() void {
+    const allocator = allocator_ orelse return;
     mutex.lock();
     defer mutex.unlock();
     var it = sessions.iterator();
     while (it.next()) |entry| {
         var s = entry.value_ptr.*;
         s.pty.deinit();
-        s.scrollback.deinit(allocator_);
-        allocator_.free(s.id);
-        allocator_.destroy(s);
+        s.scrollback.deinit(allocator);
+        allocator.free(s.id);
+        allocator.destroy(s);
     }
-    sessions.deinit(allocator_);
+    sessions.deinit(allocator);
 }
 
 pub fn requestFromQuery(ctx: zx.RouteContext) AttachRequest {
@@ -65,6 +62,7 @@ pub fn requestFromQuery(ctx: zx.RouteContext) AttachRequest {
 }
 
 pub fn attach(ctx: zx.SocketOpenCtx(AttachRequest)) !void {
+    const allocator = ensureAllocator(ctx.allocator);
     const id = ctx.data.session_id[0..ctx.data.session_len];
     if (id.len == 0) {
         ctx.socket.close();
@@ -88,10 +86,10 @@ pub fn attach(ctx: zx.SocketOpenCtx(AttachRequest)) !void {
     s.attach_key += 1;
     s.attached = .{ .socket = ctx.socket, .key = s.attach_key };
     s.pty.resize(ctx.data.cols, ctx.data.rows);
-    const scrollback = try allocator_.dupe(u8, s.scrollback.items);
+    const scrollback = try allocator.dupe(u8, s.scrollback.items);
     const key = s.attach_key;
     mutex.unlock();
-    defer allocator_.free(scrollback);
+    defer allocator.free(scrollback);
 
     if (scrollback.len > 0) try send(ctx.socket, .{ .data = .{ .value = scrollback } });
     try send(ctx.socket, .{ .ack = .{ .cols = ctx.data.cols, .rows = ctx.data.rows } });
@@ -135,10 +133,10 @@ pub fn message(ctx: zx.SocketCtx(AttachRequest)) !void {
 pub fn writeSessionsJson(ctx: zx.RouteContext) !void {
     mutex.lock();
     defer mutex.unlock();
-    var list = std.ArrayList(struct { id: []const u8, startedAt: i64, attached: bool, activeProcess: []const u8 }).init(ctx.arena);
+    var list: std.ArrayList(struct { id: []const u8, startedAt: i64, attached: bool, activeProcess: []const u8 }) = .empty;
     var it = sessions.iterator();
     while (it.next()) |entry| {
-        try list.append(.{
+        try list.append(ctx.arena, .{
             .id = entry.value_ptr.*.id,
             .startedAt = entry.value_ptr.*.started_at,
             .attached = entry.value_ptr.*.attached != null,
@@ -149,16 +147,17 @@ pub fn writeSessionsJson(ctx: zx.RouteContext) !void {
 }
 
 fn createSessionLocked(id: []const u8, cols: u16, rows: u16) !*Session {
-    const owned_id = try allocator_.dupe(u8, id);
-    errdefer allocator_.free(owned_id);
-    const s = try allocator_.create(Session);
-    errdefer allocator_.destroy(s);
+    const allocator = allocator_.?;
+    const owned_id = try allocator.dupe(u8, id);
+    errdefer allocator.free(owned_id);
+    const s = try allocator.create(Session);
+    errdefer allocator.destroy(s);
     s.* = .{
         .id = owned_id,
         .started_at = std.time.milliTimestamp(),
-        .pty = try Pty.spawn(allocator_, cols, rows),
+        .pty = try Pty.spawn(allocator, cols, rows),
     };
-    try sessions.put(allocator_, owned_id, s);
+    try sessions.put(allocator, owned_id, s);
     s.reader = try std.Thread.spawn(.{}, readerMain, .{s});
     return s;
 }
@@ -177,7 +176,8 @@ fn readerMain(s: *Session) void {
 
 fn onPtyData(s: *Session, data: []const u8) void {
     mutex.lock();
-    s.scrollback.appendSlice(allocator_, data) catch {};
+    const allocator = allocator_.?;
+    s.scrollback.appendSlice(allocator, data) catch {};
     if (s.scrollback.items.len > SCROLLBACK_CAP) {
         const keep_from = s.scrollback.items.len - SCROLLBACK_KEEP;
         std.mem.copyForwards(u8, s.scrollback.items[0..SCROLLBACK_KEEP], s.scrollback.items[keep_from..]);
@@ -189,7 +189,13 @@ fn onPtyData(s: *Session, data: []const u8) void {
 }
 
 fn send(socket: zx.Socket, msg: protocol.ServerMsg) !void {
-    const json = try protocol.stringifyServer(allocator_, msg);
-    defer allocator_.free(json);
+    const allocator = allocator_.?;
+    const json = try protocol.stringifyServer(allocator, msg);
+    defer allocator.free(json);
     try socket.write(json);
+}
+
+fn ensureAllocator(allocator: std.mem.Allocator) std.mem.Allocator {
+    if (allocator_ == null) allocator_ = allocator;
+    return allocator_.?;
 }
