@@ -149,6 +149,7 @@ const WebSocket = struct {
         out.writer().writeInt(u16, code, .big) catch {};
         out.appendSlice(reason) catch {};
         const payload = out.items;
+        if (payload.len > 125) return;
         buf[0] = 0x88;
         buf[1] = @intCast(payload.len);
         std.mem.copyForwards(u8, buf[2 .. 2 + payload.len], payload);
@@ -200,6 +201,9 @@ fn handleConnection(allocator: std.mem.Allocator, app: *App, stream: std.net.Str
     if (std.mem.eql(u8, target, "/") or std.mem.startsWith(u8, target, "/?")) return writeResponse(s, "200 OK", "text/html; charset=utf-8", Html) catch {};
     if (std.mem.eql(u8, target, "/client.js")) return writeResponse(s, "200 OK", "text/javascript; charset=utf-8", client_js) catch {};
     if (std.mem.eql(u8, target, "/favicon.ico")) return writeBytes(s, "200 OK", "image/vnd.microsoft.icon", favicon) catch {};
+    // client.wasm is emitted by `zig build`; Zig 0.14 cannot @embedFile() a
+    // sibling build artifact into the native executable during the same build
+    // step, so the server streams it from zig-out next to the installed binary.
     if (std.mem.eql(u8, target, "/client.wasm")) return serveFile(s, "zig-out/bin/client.wasm", "application/wasm") catch writeResponse(s, "404 Not Found", "text/plain", "run `zig build` to create client.wasm") catch {};
     if (std.mem.eql(u8, target, "/api/sessions")) return sessionsJson(allocator, app, s) catch {};
     writeResponse(s, "404 Not Found", "text/plain", "not found") catch {};
@@ -511,9 +515,16 @@ fn activeProcess(allocator: std.mem.Allocator, shell_pid: c_int) ![]const u8 {
 fn serveFile(stream: std.net.Stream, path: []const u8, content_type: []const u8) !void {
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
-    const data = try file.readToEndAlloc(std.heap.page_allocator, 16 * 1024 * 1024);
-    defer std.heap.page_allocator.free(data);
-    try writeBytes(stream, "200 OK", content_type, data);
+    const size = try file.getEndPos();
+    try stream.writer().print("HTTP/1.1 200 OK\r\nContent-Type: {s}\r\nContent-Length: {d}\r\nConnection: close\r\n\r\n", .{ content_type, size });
+    var reader = file.reader();
+    var writer = stream.writer();
+    var buffer: [16 * 1024]u8 = undefined;
+    while (true) {
+        const n = try reader.read(&buffer);
+        if (n == 0) break;
+        try writer.writeAll(buffer[0..n]);
+    }
 }
 
 fn writeResponse(stream: std.net.Stream, status: []const u8, content_type: []const u8, body: []const u8) !void {
