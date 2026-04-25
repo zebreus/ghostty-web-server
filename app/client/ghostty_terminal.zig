@@ -1,8 +1,11 @@
 const std = @import("std");
 
-// WASM-facing terminal surface. This module is intentionally isolated so it can
-// be wired to ghostty/libghostty's terminal and renderer APIs without changing
-// the Ziex app or WebSocket protocol.
+// WASM-facing terminal surface. This module is intentionally isolated so the
+// rest of the Ziex app only depends on a stable browser ABI: init, resize,
+// write PTY bytes, and query dimensions. The future ghostty/libghostty binding
+// should implement those exports by constructing Ghostty's terminal state,
+// feeding UTF-8 PTY chunks into it, rendering cells, and forwarding title, bell,
+// mouse, paste, and focus events through the Ziex client component.
 var cols: u16 = 80;
 var rows: u16 = 24;
 

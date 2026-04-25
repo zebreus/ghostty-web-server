@@ -1,6 +1,8 @@
 .{
     .name = .ghostty_web_server,
     .version = "0.5.0",
+    // Zig validates this package identity fingerprint and reports the expected
+    // value when the package metadata changes.
     .fingerprint = 0x2137e78d61983a5a,
     .minimum_zig_version = "0.15.2",
     .dependencies = .{

@@ -62,7 +62,9 @@ app/
 
 ## Status
 
-The repository has been converted to a Ziex/Zig scaffold with protocol-preserving server routes and a dedicated WASM integration boundary for direct `ghostty/libghostty` work. The remaining blocker is replacing the placeholder WASM terminal boundary with Ghostty's actual libghostty APIs once that dependency is vendored or exposed as a Zig package suitable for browser/WASM builds.
+The repository has been converted to a Ziex/Zig scaffold with protocol-preserving server routes.
+It also includes a dedicated WASM integration boundary for direct `ghostty/libghostty` work.
+The remaining blocker is replacing the placeholder WASM terminal boundary with Ghostty's actual libghostty APIs once that dependency is vendored or exposed as a Zig package suitable for browser/WASM builds.
 
 ## Security warning
 

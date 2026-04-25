@@ -37,7 +37,9 @@ fn takeSession() void {
 }
 
 fn refreshSessions() void {
-    _ = zx.fetch(.noop, zx.allocator, "/api/sessions", .{}) catch {};
+    _ = zx.fetch(.noop, zx.allocator, "/api/sessions", .{}) catch {
+        message.set("Failed to refresh sessions");
+    };
 }
 
 fn sendKey(event: zx.client.Event) void {
