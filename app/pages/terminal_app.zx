@@ -1,4 +1,4 @@
-const TerminalState = enum { connecting, connected, reconnecting, busy, disconnected };
+const TerminalState = frontend.TerminalState;
 
 var state: *zx.State(TerminalState) = undefined;
 var message: *zx.State([]const u8) = undefined;
