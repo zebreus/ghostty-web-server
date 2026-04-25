@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) void {
     const install_wasm = b.addInstallArtifact(client_wasm, .{ .dest_dir = .{ .override = .{ .custom = "bin" } } });
     b.getInstallStep().dependOn(&install_wasm.step);
 
-    const install_client_js = b.addInstallFile(b.path("src/client/bootstrap.js"), "bin/client.js");
+    const install_client_js = b.addInstallFile(b.path("src/server/client_bootstrap.js"), "bin/client.js");
     b.getInstallStep().dependOn(&install_client_js.step);
 
     const run_cmd = b.addRunArtifact(exe);

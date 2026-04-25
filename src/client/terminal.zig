@@ -39,7 +39,8 @@ export fn terminal_set_title(ptr: [*]const u8, len: usize) void {
 }
 
 export fn alloc(len: usize) ?[*]u8 {
-    return std.heap.wasm_allocator.alloc(u8, len) catch null;
+    const bytes = std.heap.wasm_allocator.alloc(u8, len) catch return null;
+    return bytes.ptr;
 }
 
 export fn free(ptr: [*]u8, len: usize) void {

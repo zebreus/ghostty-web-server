@@ -1,6 +1,7 @@
 .{
     .name = .ghostty_web_server,
     .version = "0.5.0",
+    .fingerprint = 0x2137e78da92bb1c8,
     .minimum_zig_version = "0.14.0",
     .paths = .{
         "build.zig",

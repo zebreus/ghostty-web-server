@@ -1,8 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
 
-const favicon = @embedFile("../../assets/favicon.ico");
-const client_js = @embedFile("../client/bootstrap.js");
+const favicon = @embedFile("favicon.ico");
+const client_js = @embedFile("client_bootstrap.js");
 
 const SCROLLBACK_CAP = 256_000;
 const SCROLLBACK_KEEP = 192_000;
@@ -242,7 +242,9 @@ fn websocket(allocator: std.mem.Allocator, app: *App, stream: std.net.Stream, he
         const payload = readFrame(allocator, stream) catch break;
         defer allocator.free(payload);
         if (parseInput(payload)) |input| {
-            _ = std.posix.write(session.pty_fd, input) catch {};
+            const unescaped = jsonUnescape(allocator, input) catch continue;
+            defer allocator.free(unescaped);
+            _ = std.posix.write(session.pty_fd, unescaped) catch {};
         } else if (parseResize(payload)) |sz| {
             resizePty(session.pty_fd, sz.cols, sz.rows) catch {};
             const msg = try std.fmt.allocPrint(allocator, "{{\"type\":\"ack\",\"cols\":{d},\"rows\":{d}}}", .{ sz.cols, sz.rows });
@@ -294,7 +296,11 @@ fn readFrame(allocator: std.mem.Allocator, stream: std.net.Stream) ![]u8 {
     const payload = try allocator.alloc(u8, @intCast(len));
     errdefer allocator.free(payload);
     try stream.reader().readNoEof(payload);
-    if (masked) for (payload, 0..) |*b, i| b.* ^= mask[i % 4];
+    if (masked) {
+        for (payload, 0..) |*b, i| {
+            b.* ^= mask[i % 4];
+        }
+    }
     return payload;
 }
 
@@ -325,7 +331,9 @@ fn headerValue(head: []const u8, name: []const u8) ?[]const u8 {
 
 const Query = struct {
     raw: []const u8,
-    fn init(raw: []const u8) Query { return .{ .raw = raw }; }
+    fn init(raw: []const u8) Query {
+        return .{ .raw = raw };
+    }
     fn get(self: Query, name: []const u8) ?[]const u8 {
         var pairs = std.mem.splitScalar(u8, self.raw, '&');
         while (pairs.next()) |pair| {
@@ -352,9 +360,7 @@ fn jsonEscape(writer: anytype, bytes: []const u8) !void {
         '\n' => try writer.writeAll("\\n"),
         '\r' => try writer.writeAll("\\r"),
         '\t' => try writer.writeAll("\\t"),
-        0x08 => try writer.writeAll("\\b"),
-        0x0c => try writer.writeAll("\\f"),
-        0...0x1f => try writer.print("\\u{x:0>4}", .{b}),
+        0x00...0x07, 0x0b, 0x0e...0x1f => try writer.print("\\u{x:0>4}", .{b}),
         else => try writer.writeByte(b),
     };
 }
@@ -368,6 +374,40 @@ fn jsonStringValue(json: []const u8, name: []const u8) ?[]const u8 {
         if (json[end] == '"' and json[end - 1] != '\\') return json[start..end];
     }
     return null;
+}
+
+fn jsonUnescape(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
+    var out = std.ArrayList(u8).init(allocator);
+    errdefer out.deinit();
+    var i: usize = 0;
+    while (i < value.len) : (i += 1) {
+        if (value[i] != '\\') {
+            try out.append(value[i]);
+            continue;
+        }
+        i += 1;
+        if (i >= value.len) break;
+        switch (value[i]) {
+            '"' => try out.append('"'),
+            '\\' => try out.append('\\'),
+            '/' => try out.append('/'),
+            'b' => try out.append(0x08),
+            'f' => try out.append(0x0c),
+            'n' => try out.append('\n'),
+            'r' => try out.append('\r'),
+            't' => try out.append('\t'),
+            'u' => {
+                if (i + 4 >= value.len) return error.InvalidJsonEscape;
+                const code = try std.fmt.parseInt(u21, value[i + 1 .. i + 5], 16);
+                var buf: [4]u8 = undefined;
+                const len = try std.unicode.utf8Encode(code, &buf);
+                try out.appendSlice(buf[0..len]);
+                i += 4;
+            },
+            else => return error.InvalidJsonEscape,
+        }
+    }
+    return out.toOwnedSlice();
 }
 
 fn jsonNumberValue(json: []const u8, name: []const u8) ?[]const u8 {
