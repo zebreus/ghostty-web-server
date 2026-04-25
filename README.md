@@ -81,6 +81,6 @@ zig build test
 
 The repository has been converted to a Ziex/Zig scaffold with protocol-preserving server routes and a Ghostty-backed terminal frontend.
 
-## Security warning
+## ⚠️ Security warning
 
-This server provides shell access. Only use it for local development and demos. Do not expose it to untrusted networks.
+**This server provides shell access.** Only use it for local development and demos. Do not expose it to untrusted networks.

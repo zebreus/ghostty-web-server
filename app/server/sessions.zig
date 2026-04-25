@@ -87,14 +87,11 @@ pub fn attach(ctx: zx.SocketOpenCtx(AttachRequest)) !void {
     s.attached = .{ .socket = ctx.socket, .key = s.attach_key };
     s.pty.resize(ctx.data.cols, ctx.data.rows);
     const scrollback = try allocator.dupe(u8, s.scrollback.items);
-    const key = s.attach_key;
     mutex.unlock();
     defer allocator.free(scrollback);
 
     if (scrollback.len > 0) try send(ctx.socket, .{ .data = .{ .value = scrollback } });
     try send(ctx.socket, .{ .ack = .{ .cols = ctx.data.cols, .rows = ctx.data.rows } });
-
-    _ = key;
 }
 
 pub fn detach(ctx: zx.SocketCloseCtx(AttachRequest)) void {
@@ -102,10 +99,7 @@ pub fn detach(ctx: zx.SocketCloseCtx(AttachRequest)) void {
     mutex.lock();
     defer mutex.unlock();
     if (sessions.get(id)) |s| {
-        if (s.attached) |attached| {
-            _ = attached;
-            s.attached = null;
-        }
+        if (s.attached != null) s.attached = null;
     }
 }
 
