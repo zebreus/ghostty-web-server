@@ -76,6 +76,7 @@ async fn main() -> std::io::Result<()> {
             .route("/dist/ghostty-web.js", web::get().to(ghostty_web_js))
             .route("/ghostty-vt.wasm", web::get().to(ghostty_vt_wasm))
             .route("/dist/{tail:.*}", web::get().to(dist_fallback))
+            .route("/snippets/{tail:.*}", web::get().to(snippet_asset))
             .route("/api/sessions", web::get().to(api_sessions))
             .route("/ws", web::get().to(ws_handler))
     })
@@ -128,6 +129,17 @@ async fn dist_fallback() -> impl Responder {
     HttpResponse::Ok()
         .content_type("text/javascript; charset=utf-8")
         .body("export {};")
+}
+
+/// Serve trunk's wasm-bindgen JS-snippets directory (small inline shims that
+/// `client.js` imports relatively, e.g. `dyn_import`).
+async fn snippet_asset(path: web::Path<String>) -> impl Responder {
+    let rel = format!("snippets/{}", path.into_inner());
+    let mime = mime_guess::from_path(&rel)
+        .first_or_octet_stream()
+        .essence_str()
+        .to_string();
+    embedded_response::<ClientAssets>(&rel, &mime)
 }
 
 // ---------------------------------------------------------------------------
