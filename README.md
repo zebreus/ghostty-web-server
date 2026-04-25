@@ -20,7 +20,7 @@ Server to client:
 
 | Env | Default | Notes |
 |---|---|---|
-| `PORT` | Ziex default | HTTP + WebSocket port |
+| `PORT` | `8080` | HTTP + WebSocket port |
 | `SHELL` | `/bin/bash` | Shell spawned for a session |
 
 ## Development
