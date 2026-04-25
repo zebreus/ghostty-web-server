@@ -6,6 +6,7 @@ const client_js = @embedFile("client_bootstrap.js");
 
 const SCROLLBACK_CAP = 256_000;
 const SCROLLBACK_KEEP = 192_000;
+const SHELL_EXIT_BANNER = "\r\n\x1b[33mShell exited\x1b[0m\r\n";
 
 const Winsize = extern struct {
     ws_row: c_ushort,
@@ -270,7 +271,7 @@ fn readPtyLoop(app: *App, session: *Session) void {
         session.send(app.allocator, msg);
         app.allocator.free(msg);
     }
-    const exit_msg = jsonData(app.allocator, "\r\n\x1b[33mShell exited\x1b[0m\r\n") catch null;
+    const exit_msg = jsonData(app.allocator, SHELL_EXIT_BANNER) catch null;
     if (exit_msg) |msg| {
         session.send(app.allocator, msg);
         app.allocator.free(msg);
@@ -444,7 +445,7 @@ fn resizePty(fd: std.posix.fd_t, cols: u16, rows: u16) !void {
     const tiocswinsz: c_ulong = switch (builtin.os.tag) {
         .linux => 0x5414,
         .macos => 0x80087467,
-        else => @compileError("ghostty-web-server currently supports POSIX targets with TIOCSWINSZ"),
+        else => @compileError("ghostty-web-server currently supports linux and macos TIOCSWINSZ targets"),
     };
     if (ioctl(fd, tiocswinsz, &ws) != 0) return error.ResizeFailed;
 }
