@@ -55,11 +55,11 @@ macOS x64/arm64.
 ```
 src/
   server/
-    main.zig       native HTTP/WebSocket/PTTY server
+    main.zig       native HTTP/WebSocket/PTY server
     app.zx         Ziex page-shell component source
+    client_bootstrap.js browser bootstrap, WS client, minimal renderer
   client/
     terminal.zig   WASM terminal boundary
-    bootstrap.js   browser bootstrap, WS client, minimal renderer
   shared/
     protocol.zig   shared wire protocol types
 ```

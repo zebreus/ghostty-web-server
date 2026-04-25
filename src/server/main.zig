@@ -16,6 +16,8 @@ const Winsize = extern struct {
 
 extern "c" fn forkpty(amaster: *c_int, name: ?[*:0]u8, termp: ?*anyopaque, winp: ?*Winsize) c_int;
 extern "c" fn setsid() c_int;
+extern "c" fn setenv(name: [*:0]const u8, value: [*:0]const u8, overwrite: c_int) c_int;
+extern "c" fn ioctl(fd: c_int, request: c_ulong, ...) c_int;
 
 const Html =
     "<!doctype html>" ++
@@ -84,8 +86,9 @@ const App = struct {
             const home = std.posix.getenv("HOME") orelse "/";
             std.posix.chdir(home) catch {};
             const argv = [_:null]?[*:0]const u8{ @ptrCast(shell.ptr), null };
-            const envp = [_:null]?[*:0]const u8{ @ptrCast("TERM=xterm-256color"), @ptrCast("COLORTERM=truecolor"), null };
-            std.posix.execveZ(@ptrCast(shell.ptr), &argv, &envp) catch std.posix.exit(127);
+            _ = setenv("TERM", "xterm-256color", 1);
+            _ = setenv("COLORTERM", "truecolor", 1);
+            std.posix.execvpeZ(@ptrCast(shell.ptr), &argv, std.c.environ) catch std.posix.exit(127);
         }
 
         const owned_id = try self.allocator.dupe(u8, id);
@@ -371,9 +374,21 @@ fn jsonStringValue(json: []const u8, name: []const u8) ?[]const u8 {
     const start = (std.mem.indexOf(u8, json, needle) orelse return null) + needle.len;
     var end = start;
     while (end < json.len) : (end += 1) {
-        if (json[end] == '"' and json[end - 1] != '\\') return json[start..end];
+        if (json[end] == '"' and !isEscaped(json, end)) return json[start..end];
     }
     return null;
+}
+
+fn isEscaped(text: []const u8, quote_index: usize) bool {
+    if (quote_index == 0) return false;
+    var slash_count: usize = 0;
+    var i = quote_index;
+    while (i > 0) {
+        i -= 1;
+        if (text[i] != '\\') break;
+        slash_count += 1;
+    }
+    return slash_count % 2 == 1;
 }
 
 fn jsonUnescape(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
@@ -422,7 +437,12 @@ fn jsonNumberValue(json: []const u8, name: []const u8) ?[]const u8 {
 
 fn resizePty(fd: std.posix.fd_t, cols: u16, rows: u16) !void {
     var ws = Winsize{ .ws_row = rows, .ws_col = cols, .ws_xpixel = 0, .ws_ypixel = 0 };
-    _ = std.os.linux.ioctl(fd, 0x5414, @intFromPtr(&ws));
+    const tiocswinsz: c_ulong = switch (builtin.os.tag) {
+        .linux => 0x5414,
+        .macos => 0x80087467,
+        else => @compileError("ghostty-web-server currently supports POSIX targets with TIOCSWINSZ"),
+    };
+    if (ioctl(fd, tiocswinsz, &ws) != 0) return error.ResizeFailed;
 }
 
 fn sessionsJson(allocator: std.mem.Allocator, app: *App, stream: std.net.Stream) !void {
@@ -439,10 +459,48 @@ fn sessionsJson(allocator: std.mem.Allocator, app: *App, stream: std.net.Stream)
         defer session.mutex.unlock();
         if (!first) try out.append(',');
         first = false;
-        try out.writer().print("{{\"id\":\"{s}\",\"startedAt\":{d},\"attached\":{},\"activeProcess\":\"{s}\"}}", .{ session.id, session.started_at_ms, session.attached != null, "(unknown)" });
+        const active = activeProcess(allocator, session.pid) catch "(idle)";
+        defer if (!std.mem.eql(u8, active, "(idle)")) allocator.free(active);
+        try out.writer().print("{{\"id\":\"{s}\",\"startedAt\":{d},\"attached\":{},\"activeProcess\":\"", .{ session.id, session.started_at_ms, session.attached != null });
+        try jsonEscape(out.writer(), active);
+        try out.appendSlice("\"}");
     }
     try out.appendSlice("]}");
     try writeResponse(stream, "200 OK", "application/json", out.items);
+}
+
+fn activeProcess(allocator: std.mem.Allocator, shell_pid: c_int) ![]const u8 {
+    const shell_pid_arg = try std.fmt.allocPrint(allocator, "{d}", .{shell_pid});
+    defer allocator.free(shell_pid_arg);
+    const child = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "pgrep", "-n", "-P", shell_pid_arg },
+        .max_output_bytes = 1024,
+    }) catch return "(idle)";
+    defer allocator.free(child.stderr);
+    defer allocator.free(child.stdout);
+    if (child.term != .Exited or child.term.Exited != 0) return "(idle)";
+    const pid = std.mem.trim(u8, child.stdout, " \r\n\t");
+    if (pid.len == 0) return "(idle)";
+
+    const comm = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "ps", "-o", "comm=", "-p", pid },
+        .max_output_bytes = 4096,
+    }) catch return "(idle)";
+    defer allocator.free(comm.stderr);
+    if (comm.term != .Exited or comm.term.Exited != 0) {
+        allocator.free(comm.stdout);
+        return "(idle)";
+    }
+    const name = std.mem.trim(u8, comm.stdout, " \r\n\t");
+    if (name.len == 0) {
+        allocator.free(comm.stdout);
+        return "(idle)";
+    }
+    const owned = try allocator.dupe(u8, name);
+    allocator.free(comm.stdout);
+    return owned;
 }
 
 fn serveFile(stream: std.net.Stream, path: []const u8, content_type: []const u8) !void {
