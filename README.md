@@ -68,7 +68,7 @@ The browser terminal path uses Ghostty directly:
 - `build.zig.zon` declares `ghostty-org/ghostty` as a Zig dependency.
 - `build.zig` imports Ghostty's `ghostty-vt` module for the WASM client and the focused native integration test.
 - `app/client/ghostty_terminal.zig` constructs a `vt.Terminal`, keeps a persistent `vt.TerminalStream`, writes PTY chunks through Ghostty's VT parser, tracks bell/title effects, resizes with Ghostty reflow, and renders the screen via `vt.formatter.TerminalFormatter`.
-- `app/client/frontend.zig` opens the preserved `/ws` protocol, persists `sessionId` in `localStorage`, sends keyboard input, and renders server `data` messages through Ghostty before updating Ziex state.
+- `app/client/frontend.zig` opens the preserved `/ws` protocol, persists `sessionId` in `localStorage`, measures the terminal viewport entirely from WASM, sends resize/input frames, and writes Ghostty-produced HTML directly into the browser DOM from Zig.
 
 Validation:
 

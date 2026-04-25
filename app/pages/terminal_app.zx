@@ -5,13 +5,11 @@ const TerminalState = frontend.TerminalState;
 var state: *zx.State(TerminalState) = undefined;
 var message: *zx.State([]const u8) = undefined;
 var session_id: *zx.State([]const u8) = undefined;
-var terminal_text: *zx.State([]const u8) = undefined;
 
 pub fn TerminalApp(ctx: *zx.ComponentCtx(void)) zx.Component {
     state = ctx.state(TerminalState, .connecting);
     message = ctx.state([]const u8, "Connecting…");
     session_id = ctx.state([]const u8, "");
-    terminal_text = ctx.state([]const u8, "");
 
     return (
         <section @allocator={ctx.allocator} class="terminal-layout" onload={start}>
@@ -22,7 +20,10 @@ pub fn TerminalApp(ctx: *zx.ComponentCtx(void)) zx.Component {
                 <button onclick={refreshSessions}>Sessions</button>
             </div>
             <div id="terminal" class="terminal-surface" tabindex="0" onkeydown={sendKey} onpaste={pasteText}>
-                <pre>{terminal_text}</pre>
+                <div id="terminal-viewport" class="terminal-viewport">
+                    <div id="terminal-screen" class="terminal-screen"></div>
+                </div>
+                <div id="terminal-ruler" class="terminal-ruler">MMMMMMMMMM</div>
             </div>
         </section>
     );
@@ -31,11 +32,11 @@ pub fn TerminalApp(ctx: *zx.ComponentCtx(void)) zx.Component {
 fn start() void {
     state.set(.connecting);
     message.set("Connecting…");
-    frontend.start(session_id, terminal_text, state, message, false);
+    frontend.start(session_id, state, message, false);
 }
 
 fn takeSession() void {
-    frontend.start(session_id, terminal_text, state, message, true);
+    frontend.start(session_id, state, message, true);
 }
 
 fn refreshSessions() void {

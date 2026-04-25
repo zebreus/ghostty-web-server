@@ -75,6 +75,8 @@ pub const TerminalFrontend = struct {
     }
 
     pub fn renderAlloc(self: *TerminalFrontend, allocator: Allocator, format: Format) ![]u8 {
+        const bg = self.terminal.colors.background.get() orelse self.terminal.colors.palette.current[0];
+        const fg = self.terminal.colors.foreground.get() orelse self.terminal.colors.palette.current[7];
         var formatter: vt.formatter.TerminalFormatter = .init(self.terminal, .{
             .emit = switch (format) {
                 .plain => .plain,
@@ -82,7 +84,10 @@ pub const TerminalFrontend = struct {
                 .vt => .vt,
             },
             .unwrap = false,
-            .trim = true,
+            .trim = format != .html,
+            .background = if (format == .html) bg else null,
+            .foreground = if (format == .html) fg else null,
+            .palette = if (format == .html) &self.terminal.colors.palette.current else null,
         });
         formatter.extra = switch (format) {
             .plain => .none,
@@ -202,5 +207,7 @@ test "Ghostty terminal parses text, title, bell, resize, and HTML render" {
     const html = try terminal.renderAlloc(std.testing.allocator, .html);
     defer std.testing.allocator.free(html);
     try std.testing.expect(std.mem.indexOf(u8, html, "red") != null);
-    try std.testing.expect(std.mem.indexOf(u8, html, "<") != null);
+    try std.testing.expect(std.mem.indexOf(u8, html, "<div style=\"font-family: monospace; white-space: pre;") != null);
+    try std.testing.expect(std.mem.indexOf(u8, html, "background-color:") != null);
+    try std.testing.expect(std.mem.indexOf(u8, html, "color:") != null);
 }
