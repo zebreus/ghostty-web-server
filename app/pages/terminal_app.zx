@@ -5,21 +5,26 @@ const TerminalState = frontend.TerminalState;
 var state: *zx.State(TerminalState) = undefined;
 var message: *zx.State([]const u8) = undefined;
 var session_id: *zx.State([]const u8) = undefined;
+var started = false;
 
 pub fn TerminalApp(ctx: *zx.ComponentCtx(void)) zx.Component {
     state = ctx.state(TerminalState, .connecting);
     message = ctx.state([]const u8, "Connecting…");
     session_id = ctx.state([]const u8, "");
 
+    if (comptime @import("builtin").target.cpu.arch.isWasm()) {
+        if (!started) _ = zx.client.setTimeout(startIfNeeded, 0);
+    }
+
     return (
-        <section @allocator={ctx.allocator} class="terminal-layout" onload={start}>
+        <section @allocator={ctx.allocator} class="terminal-layout" onload={startIfNeeded}>
             <div class="terminal-toolbar">
                 <strong>ghostty-web-server</strong>
                 <span class="terminal-status">{message}</span>
                 <button onclick={takeSession}>Take session</button>
                 <button onclick={refreshSessions}>Sessions</button>
             </div>
-            <div id="terminal" class="terminal-surface" tabindex="0" onkeydown={sendKey} onpaste={pasteText}>
+            <div id="terminal" class="terminal-surface" tabindex="0" autofocus="autofocus" onfocus={startIfNeeded} onclick={startIfNeeded} onkeydown={sendKey} onpaste={pasteText}>
                 <div id="terminal-viewport" class="terminal-viewport">
                     <div id="terminal-screen" class="terminal-screen"></div>
                 </div>
@@ -33,9 +38,16 @@ fn start() void {
     state.set(.connecting);
     message.set("Connecting…");
     frontend.start(session_id, state, message, false);
+    started = true;
+}
+
+fn startIfNeeded() void {
+    if (started) return;
+    start();
 }
 
 fn takeSession() void {
+    started = true;
     frontend.start(session_id, state, message, true);
 }
 
