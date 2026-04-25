@@ -270,7 +270,11 @@ fn readPtyLoop(app: *App, session: *Session) void {
         session.send(app.allocator, msg);
         app.allocator.free(msg);
     }
-    session.send(app.allocator, "{\"type\":\"data\",\"value\":\"\\r\\n\\u001b[33mShell exited\\u001b[0m\\r\\n\"}");
+    const exit_msg = jsonData(app.allocator, "\r\n\x1b[33mShell exited\x1b[0m\r\n") catch null;
+    if (exit_msg) |msg| {
+        session.send(app.allocator, msg);
+        app.allocator.free(msg);
+    }
     app.removeSession(session);
 }
 
@@ -369,8 +373,8 @@ fn jsonEscape(writer: anytype, bytes: []const u8) !void {
 }
 
 fn jsonStringValue(json: []const u8, name: []const u8) ?[]const u8 {
-    const needle = std.fmt.allocPrint(std.heap.page_allocator, "\"{s}\":\"", .{name}) catch return null;
-    defer std.heap.page_allocator.free(needle);
+    var needle_buf: [128]u8 = undefined;
+    const needle = std.fmt.bufPrint(&needle_buf, "\"{s}\":\"", .{name}) catch return null;
     const start = (std.mem.indexOf(u8, json, needle) orelse return null) + needle.len;
     var end = start;
     while (end < json.len) : (end += 1) {
@@ -426,8 +430,8 @@ fn jsonUnescape(allocator: std.mem.Allocator, value: []const u8) ![]u8 {
 }
 
 fn jsonNumberValue(json: []const u8, name: []const u8) ?[]const u8 {
-    const needle = std.fmt.allocPrint(std.heap.page_allocator, "\"{s}\":", .{name}) catch return null;
-    defer std.heap.page_allocator.free(needle);
+    var needle_buf: [128]u8 = undefined;
+    const needle = std.fmt.bufPrint(&needle_buf, "\"{s}\":", .{name}) catch return null;
     var start = (std.mem.indexOf(u8, json, needle) orelse return null) + needle.len;
     while (start < json.len and json[start] == ' ') start += 1;
     var end = start;

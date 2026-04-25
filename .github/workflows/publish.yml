@@ -21,6 +21,8 @@ jobs:
         with:
           version: 0.14.1
 
+      # ReleaseFast keeps terminal I/O latency low; binary size is secondary for
+      # this local-development tool.
       - run: zig build -Doptimize=ReleaseFast
 
   create-release:
@@ -69,6 +71,8 @@ jobs:
         with:
           version: 0.14.1
 
+      # ReleaseFast keeps terminal I/O latency low; binary size is secondary for
+      # this local-development tool.
       - run: zig build -Doptimize=ReleaseFast -Dtarget=${{ matrix.target }}
 
       - run: cp zig-out/bin/ghostty-web-server ghostty-web-server-${{ matrix.platform }}

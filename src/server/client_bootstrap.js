@@ -38,6 +38,10 @@ class TerminalView {
   }
 
   write(data) {
+    // Strip OSC (`ESC ] ... BEL` / `ESC ] ... ESC \`) and CSI
+    // (`ESC [ ... final-byte`) control sequences before appending to the
+    // minimal text renderer. The libghostty-backed renderer will consume these
+    // natively once the full terminal grid integration lands.
     this.buffer += data.replace(/\x1b\][^\x07]*(?:\x07|\x1b\\)/g, '').replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '');
     if (this.buffer.length > this.maxBuffer) this.buffer = this.buffer.slice(-192000);
     this.pre.textContent = this.buffer;
@@ -144,6 +148,7 @@ async function main() {
   };
 
   view.pre.addEventListener('keydown', (event) => {
+    // Reserve Ctrl+K for the command palette shortcut planned for the Ziex UI.
     if (event.ctrlKey && event.key === 'k') return;
     if (event.key.length === 1) {
       send({ type: 'input', value: event.key });
