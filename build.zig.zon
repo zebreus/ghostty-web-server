@@ -1,0 +1,17 @@
+.{
+    .name = .ghostty_web_server,
+    .version = "0.5.0",
+    .fingerprint = 0x6b91a28959ad0d2c,
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{
+        .zx = .{
+            .url = "git+https://github.com/ziex-dev/ziex?ref=v0.1.0-dev.1050#689503e0ff2c2e1cadb82729b54cd47d6bc73b73",
+            .hash = "zx-0.1.0-dev.1050-8okzKrrFmgGpzY62AhPuaGMqfAVrh5oWiVxxBx5-mpQV",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "app",
+    },
+}

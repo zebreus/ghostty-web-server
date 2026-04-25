@@ -1,0 +1,10 @@
+pub fn Page(ctx: zx.PageContext) zx.Component {
+    return (
+        <main @allocator={ctx.arena} id="app-shell">
+            <TerminalApp @rendering={.client} />
+        </main>
+    );
+}
+
+const zx = @import("zx");
+pub const TerminalApp = @import("./terminal_app.zig").TerminalApp;
