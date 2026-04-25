@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["server", "client"]
+
+[workspace.package]
+version = "0.4.0"
+edition = "2021"
+license = "MIT"
+authors = ["Coder"]
+description = "Local web server that exposes a shell PTY through a ghostty-web terminal in the browser"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"

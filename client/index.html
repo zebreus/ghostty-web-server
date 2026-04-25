@@ -1,8 +1,12 @@
-import { TerminalIsland } from '../islands/TerminalIsland';
-import { PaletteIsland } from '../islands/PaletteIsland';
-import { StatusIsland } from '../islands/StatusIsland';
-
-const STYLES = `
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" type="image/vnd.microsoft.icon" href="/favicon.ico" />
+<title>ghostty-web</title>
+<link data-trunk rel="rust" data-bin="client" data-type="main" data-wasm-opt="z" />
+<style>
 :root{
   --bg:#1e1e1e; --panel:#1f1f1f; --panel-2:#262626; --panel-3:#2c2c2c;
   --border:#353535; --muted:#888; --fg:#e5e5e5; --accent:#4ea2ff;
@@ -121,30 +125,11 @@ button{font:inherit;color:inherit}
 @keyframes gpSpin{to{transform:rotate(360deg)}}
 @keyframes gpFade{from{opacity:0}to{opacity:1}}
 @keyframes gpRise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
-`;
-
-export function App() {
-  return (
-    <html lang="en">
-      <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <link rel="icon" type="image/vnd.microsoft.icon" href="/favicon.ico" />
-        <title>ghostty-web</title>
-        <style>{STYLES}</style>
-      </head>
-      <body>
-        <div id="root">
-          <TerminalIsland />
-        </div>
-        <div id="palette-root">
-          <PaletteIsland />
-        </div>
-        <div id="status-root">
-          <StatusIsland />
-        </div>
-        <script type="module" src="/client.js" />
-      </body>
-    </html>
-  );
-}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="palette-root"></div>
+<div id="status-root"></div>
+</body>
+</html>

@@ -1,0 +1,27 @@
+[package]
+name = "ghostty-web-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description.workspace = true
+
+[[bin]]
+name = "ghostty-web-server"
+path = "src/main.rs"
+
+[dependencies]
+actix-web = "4.9"
+actix-ws = "0.3"
+actix-rt = "2.10"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util"] }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rust-embed = { version = "8", features = ["interpolate-folder-path"] }
+mime_guess = "2"
+portable-pty = "0.8"
+uuid = { version = "1", features = ["v4"] }
+log = "0.4"
+env_logger = "0.11"
+once_cell = "1"
