@@ -1,5 +1,5 @@
 {
-  description = "ghostty-web-server – dev shell";
+  description = "ghostty-web-server – Ziex/Zig dev shell";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
@@ -14,8 +14,8 @@
       {
         devShells.default = pkgs.mkShell {
           packages = with pkgs; [
-            bun
-            nodejs_22
+            zig
+            zls
           ];
         };
       });

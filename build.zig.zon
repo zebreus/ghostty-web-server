@@ -1,0 +1,23 @@
+.{
+    .name = .ghostty_web_server,
+    .version = "0.5.0",
+    // Zig validates this package identity fingerprint and reports the expected
+    // value when the package metadata changes.
+    .fingerprint = 0x2137e78d61983a5a,
+    .minimum_zig_version = "0.15.2",
+    .dependencies = .{
+        .zx = .{
+            .url = "git+https://github.com/ziex-dev/ziex?ref=v0.1.0-dev.1050#689503e0ff2c2e1cadb82729b54cd47d6bc73b73",
+            .hash = "zx-0.1.0-dev.1050-8okzKrrFmgGpzY62AhPuaGMqfAVrh5oWiVxxBx5-mpQV",
+        },
+        .ghostty = .{
+            .url = "git+https://github.com/ghostty-org/ghostty?ref=main#67b5783bdd718796a9e2a5d5f9de505f8e047ea5",
+            .hash = "ghostty-1.3.2-dev-5UdBC5ToDgWB3IndniWcX1O3mg2waGyI3_D9Dd848q3S",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "app",
+    },
+}

@@ -1,89 +1,86 @@
 # ghostty-web-server
 
-A local web server that opens a real shell session in your browser, rendered with the
-[ghostty-web](https://github.com/coder/ghostty-web) terminal emulator. Built on
-[Bun](https://bun.com) + [Elysia](https://elysiajs.com) with a tiny
-[Preact](https://preactjs.com) island for the terminal. POSIX only.
+A Ziex/Zig rewrite of the local Ghostty web server. The server keeps the original WebSocket envelope protocol while moving the application shell, routes, and client components to Ziex.
 
-## Quick start
+## Protocol
 
-### Single binary (no runtime needed)
+Every WebSocket frame is a JSON object.
 
-Download the binary for your platform from the
-[releases page](https://github.com/lennart-forgent/ghostty-web-server/releases) and run it:
+Client to server:
 
-```bash
-chmod +x ghostty-web-server-linux-x64
-./ghostty-web-server-linux-x64
-```
+- `{ "type": "input", "value": "..." }`
+- `{ "type": "resize", "cols": 80, "rows": 24 }`
 
-Then open <http://localhost:8080>.
+Server to client:
+
+- `{ "type": "data", "value": "..." }`
+- `{ "type": "ack", "cols": 80, "rows": 24 }`
 
 ## Configuration
 
 | Env | Default | Notes |
 |---|---|---|
 | `PORT` | `8080` | HTTP + WebSocket port |
-| `SHELL` | `/bin/bash` | Shell to spawn for each session |
-
-## Reverse proxy
-
-HTTP and WebSocket share one port, and the client uses relative URLs, so it works behind
-ngrok, nginx, or any proxy without extra config.
-
-```nginx
-location / {
-    proxy_pass http://localhost:8080;
-    proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
-    proxy_set_header Host $host;
-}
-```
+| `SHELL` | `/bin/bash` | Shell spawned for a session |
 
 ## Development
 
+Install Zig 0.15.2 and the Ziex CLI, then run:
+
 ```bash
-bun install
-bun run dev       # http://localhost:8080, hot-reload for both server and client
+zig build dev
 ```
 
-`bun run dev` runs two watchers in parallel: `bun build --watch` for `src/client.tsx`
-and `bun --watch` for `src/server.tsx`.
+or:
+
+```bash
+zx dev
+```
 
 ## Build
 
 ```bash
-bun run build              # dist/server.js (Bun bundle, used as the npm bin)
-bun run build:bin          # dist/ghostty-web-server (single binary, current platform)
-bun run build:bin:linux-x64
-bun run build:bin:linux-arm64
-bun run build:bin:darwin-arm64
-bun run build:bin:darwin-x64
+zig build -Doptimize=ReleaseFast
 ```
+
+The build compiles Ghostty's `libghostty-vt` package for the Ziex client and also emits a small `ghostty-terminal` WASM boundary artifact.
 
 ## Architecture
 
+```text
+app/
+  main.zig                         Ziex app entrypoint
+  pages/page.zx                    root page
+  pages/terminal_app.zx            client-rendered Ziex terminal UI shell
+  pages/ws/route.zig               WebSocket endpoint
+  pages/api/sessions/route.zig     session listing endpoint
+  server/protocol.zig              unchanged JSON envelope protocol
+  server/sessions.zig              session map, attach/takeover, scrollback
+  server/pty.zig                   shell process bridge
+  client/ghostty_terminal.zig      Ghostty VT terminal parser/renderer bridge
+  client/frontend.zig              Ziex WebSocket client and Ghostty render loop
 ```
-src/
-  components/App.tsx    server-rendered page shell (Preact JSX)
-  islands/              client-hydrated components
-    TerminalIsland.tsx  ghostty-web bootstrap + WebSocket PTY client
-  client.tsx            hydration entry
-  server.tsx            Elysia routes + Bun.spawn({ terminal }) PTY
+
+## Ghostty integration
+
+The browser terminal path uses Ghostty directly:
+
+- `build.zig.zon` declares `ghostty-org/ghostty` as a Zig dependency.
+- `build.zig` imports Ghostty's `ghostty-vt` module for the WASM client and the focused native integration test.
+- `app/client/ghostty_terminal.zig` constructs a `vt.Terminal`, keeps a persistent `vt.TerminalStream`, writes PTY chunks through Ghostty's VT parser, tracks bell/title effects, resizes with Ghostty reflow, and renders the screen via `vt.formatter.TerminalFormatter`.
+- `app/client/frontend.zig` opens the preserved `/ws` protocol, persists `sessionId` in `localStorage`, measures the terminal viewport entirely from WASM, sends resize/input frames, and writes Ghostty-produced HTML directly into the browser DOM from Zig.
+
+Validation:
+
+```bash
+zig build
+zig build test
 ```
 
-Three flows from the same source:
+## Status
 
-| Mode | How | Output |
-|---|---|---|
-| Dev | `bun run dev` | live `bun --watch` of `src/server.tsx`, `bun build --watch` of `src/client.tsx` |
-| npm | `bun run build` | `dist/server.js` + asset siblings (~1.5 MB total), Bun runtime required |
-| Binary | `bun run build:bin:<plat>` | `dist/ghostty-web-server-<plat>` (~100 MB), self-contained |
+The repository has been converted to a Ziex/Zig scaffold with protocol-preserving server routes and a Ghostty-backed terminal frontend.
 
-PTY: `Bun.spawn({ terminal: { cols, rows, data } })` (Bun ≥ 1.3.5). No native dependencies.
+## ⚠️ Security warning
 
-## Security warning
-
-⚠️ **This server provides full shell access.**
-Only use for local development and demos. Do not expose to untrusted networks.
+**This server provides shell access.** Only use it for local development and demos. Do not expose it to untrusted networks.
