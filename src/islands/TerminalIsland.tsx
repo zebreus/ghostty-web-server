@@ -9,13 +9,16 @@ type GhosttyModule = {
   Terminal: new (opts: Record<string, unknown>) => GhosttyTerminal;
 };
 
+type GhosttyWriteData = string | Uint8Array;
+const OSC_SCAN_LIMIT = 1024;
+
 interface GhosttyTerminal {
   cols: number;
   rows: number;
   renderer: { getMetrics(): { width: number; height: number } };
   open(el: HTMLElement): Promise<void>;
   resize(cols: number, rows: number): void;
-  write(data: string): void;
+  write(data: GhosttyWriteData): void;
   onData(cb: (data: string) => void): void;
   onResize(cb: (size: { cols: number; rows: number }) => void): void;
   hasMouseTracking(): boolean;
@@ -24,6 +27,90 @@ interface GhosttyTerminal {
   onTitleChange(cb: (title: string) => void): { dispose(): void };
   onBell(cb: () => void): { dispose(): void };
   dispose?(): void;
+  viewportY: number;
+  /** Title change detection for OSC 0/1/2. */
+  checkForTitleChange(data: string): void;
+  getScrollbackLength(): number;
+  /** writeInternal is what write() delegates to. We replace it. */
+  writeInternal(data: GhosttyWriteData, cb?: () => void): void;
+  /** Restore the previous viewport when preserving scrollback. */
+  scrollToLine(line: number): void;
+}
+
+function decodeIfContainsOscSequence(
+  data: Uint8Array,
+  decoder: TextDecoder,
+): string | undefined {
+  const scanLimit = Math.min(data.length, OSC_SCAN_LIMIT);
+  for (let byteIndex = 0; byteIndex < scanLimit - 1; byteIndex += 1) {
+    if (data[byteIndex] === 0x1b && data[byteIndex + 1] === 0x5d) {
+      return decoder.decode(data);
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Wrap `writeInternal` so ghostty-web keeps handling writes, bells, links,
+ * callbacks, and normal bottom-follow behavior, but we restore the user's
+ * scrollback position after the write if they were reading history.
+ *
+ * This keeps the patch small and aligned with upstream while still preserving
+ * scrollback during live output.
+ */
+function patchWriteInternal(term: GhosttyTerminal): () => void {
+  const originalWriteInternal = term.writeInternal;
+  const decoder = new TextDecoder();
+  const patchedWriteInternal = function (
+    this: GhosttyTerminal,
+    data: GhosttyWriteData,
+    cb?: () => void,
+  ) {
+    const terminal = this;
+    if (
+      typeof terminal.getScrollbackLength !== 'function' ||
+      typeof terminal.scrollToLine !== 'function'
+    ) {
+      originalWriteInternal.call(terminal, data, cb);
+      return;
+    }
+
+    const previousViewportY = terminal.viewportY;
+    const previousScrollbackLength = terminal.getScrollbackLength();
+    const decodedOscTitle =
+      data instanceof Uint8Array && typeof terminal.checkForTitleChange === 'function'
+        ? decodeIfContainsOscSequence(data, decoder)
+        : undefined;
+
+    const finishWrite = () => {
+      if (previousViewportY !== 0) {
+        const scrollbackDelta = terminal.getScrollbackLength() - previousScrollbackLength;
+        terminal.scrollToLine(Math.max(0, previousViewportY + scrollbackDelta));
+      }
+      if (decodedOscTitle) terminal.checkForTitleChange(decodedOscTitle);
+    };
+
+    originalWriteInternal.call(
+      terminal,
+      data,
+      cb
+        ? () => {
+            finishWrite();
+            cb();
+          }
+        : undefined,
+    );
+
+    if (!cb) requestAnimationFrame(finishWrite);
+  };
+
+  term.writeInternal = patchedWriteInternal;
+
+  return () => {
+    if (term.writeInternal === patchedWriteInternal) {
+      term.writeInternal = originalWriteInternal;
+    }
+  };
 }
 
 // RFC4122 v4 via getRandomValues, which (unlike crypto.randomUUID) works on
@@ -62,6 +149,7 @@ export function TerminalIsland() {
     let reconnectTimer: ReturnType<typeof setInterval> | undefined;
     let ro: ResizeObserver | undefined;
     let detachBridge: (() => void) | undefined;
+    let restoreWriteInternal: (() => void) | undefined;
 
     (async () => {
       const url = `${location.origin}/dist/ghostty-web.js`;
@@ -88,6 +176,11 @@ export function TerminalIsland() {
         theme: { background: '#1e1e1e', foreground: '#d4d4d4' },
       });
       await term.open(ref.current!);
+
+      // Replace writeInternal so incoming PTY data never forces the
+      // viewport to the bottom — users can scroll through history while
+      // output is still arriving.
+      restoreWriteInternal = patchWriteInternal(term);
 
       // Wire-protocol envelope. Every WS frame in either direction is JSON.
       type ClientMsg = { type: 'input'; value: string } | { type: 'resize'; cols: number; rows: number };
@@ -212,6 +305,7 @@ export function TerminalIsland() {
       cancelled = true;
       if (reconnectTimer) clearInterval(reconnectTimer);
       detachBridge?.();
+      restoreWriteInternal?.();
       ro?.disconnect();
       ws?.close();
       term?.dispose?.();
